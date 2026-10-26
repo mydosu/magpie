@@ -1,0 +1,29 @@
+{
+  "summary": "Agent 页接入 OpenClaw：未安装时在「安装其他 Agent」中给出官方的 script/PowerShell 安装命令并使用官方彩色图标；安装接入后在行内提供主模型与可按顺序增删、上移的降级模型编辑器（选完即保存），相关文案已补中、英、繁中、日、德。",
+  "scenes": [
+    {
+      "title": "Agent 页的 OpenClaw 安装入口",
+      "shots": [
+        {
+          "file": "01-agents-before.png",
+          "caption": "Agent 页：本机 Agent 列表与收起的「安装其他 Agent」",
+          "width": 2560
+        },
+        {
+          "file": "02-agents-install-openclaw.png",
+          "caption": "展开后的「安装其他 Agent」：OpenClaw 一行的官方安装方式",
+          "width": 2168
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "沙盒未安装 OpenClaw、也没有 OpenClaw 的配置，因此看不到接入开关、连接面板里的「配置模型」「主模型」「降级模型」行、选择器、上移/移除/添加降级模型以及保存失败时的行内报错；也看不到写入 magpie 供应商、保留注释与 JSON5 备份还原、只读或 $include 拒绝写入等仅在文件层面生效的行为。",
+  "interactive": true,
+  "pages": 1
+}
