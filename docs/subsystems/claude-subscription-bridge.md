@@ -308,6 +308,18 @@ done: the reporter's requests aren't known, and a fork that took the
 lead's calls (`claimResume`) looks the same from here. The log now says
 which run ended and why.
 
+A client that is Claude Code itself, resumed after its user stopped the
+turn, sends the turn given up on again with a reply it writes in for it,
+`No response requested.` (`writtenIn`), before its next message. That
+request's `nextTurn` key ends at the written-in reply, not at `backKey`
+where the run waits, so it found no run and a new one was told the whole
+conversation (a 231k-token cache write after one 499). `resume` and
+`unshelve` look past such replies (`pastUnanswered`) when the plain key
+finds nothing, and the run is told the turn given up on and what came
+after (logged "a turn after one the client gave up on goes on in its
+run"). A reply that is the model's own and says just that keeps its plain
+key, which is looked up first.
+
 ### One key per waiting run
 
 A run waits under one key (`keepIdle`, the only writer of `b.idle`);
