@@ -1005,6 +1005,14 @@ func (b *subscriptionBridge) resume(req *Request, owner string) (*subscriptionRu
 	}
 	b.mu.Lock()
 	run := b.idle[key]
+	if run == nil {
+		// the turn given up on, taken back, is sent on with Claude
+		// Code's written-in reply (pastUnanswered)
+		if past, rest := pastUnanswered(req, owner); past != "" && b.idle[past] != nil {
+			key, since, run = past, rest, b.idle[past]
+			log.Printf("claude: a turn after one the client gave up on goes on in its run, past Claude Code's written-in reply")
+		}
+	}
 	back := "" // the turn the run is taken back from first
 	if run == nil {
 		// the run went on with a turn this one doesn't follow: Claude
@@ -1108,12 +1116,40 @@ func (b *subscriptionBridge) resume(req *Request, owner string) (*subscriptionRu
 // what was said since, where a run started anew would be told the whole
 // conversation in one message, a prefix the cache has never seen.
 func nextTurn(req *Request, owner string) (string, []Message) {
+	return turnFrom(req, owner, false)
+}
+
+// pastUnanswered is nextTurn from the reply before the ones Claude Code
+// writes in itself for turns stopped before the model said anything
+// (writtenIn), which the client sends on resuming its session. A run
+// whose turn the client gave up on was taken back to before that turn
+// (letGo, #780) and waits at that reply, so nextTurn, which ends at the
+// written-in reply, found no run, and a new one was told the whole
+// conversation, written to the prompt cache again. "" when there is no
+// such reply to go past.
+func pastUnanswered(req *Request, owner string) (string, []Message) {
+	key, _ := turnFrom(req, owner, false)
+	past, since := turnFrom(req, owner, true)
+	if past == key {
+		return "", nil
+	}
+	return past, since
+}
+
+// writtenIn says m is the reply Claude Code writes in for a turn stopped
+// before the model said anything.
+func writtenIn(m Message) bool {
+	return m.Role == "assistant" && len(m.Parts) == 1 && m.Parts[0].Kind == Text &&
+		m.Parts[0].Text == "No response requested."
+}
+
+func turnFrom(req *Request, owner string, pastUnanswered bool) (string, []Message) {
 	msgs := req.Messages
 	if len(msgs) == 0 || msgs[len(msgs)-1].Role == "assistant" {
 		return "", nil
 	}
 	j := len(msgs) - 1
-	for j >= 0 && (msgs[j].Role != "assistant" || callsTool(msgs[j])) {
+	for j >= 0 && (msgs[j].Role != "assistant" || callsTool(msgs[j]) || pastUnanswered && writtenIn(msgs[j])) {
 		j--
 	}
 	if j < 0 {
@@ -1550,6 +1586,12 @@ func (b *subscriptionBridge) unshelve(req *Request, owner string) *savedSession 
 	}
 	b.mu.Lock()
 	s := b.shelf[key]
+	if s == nil {
+		// past Claude Code's written-in reply (resume)
+		if past, rest := pastUnanswered(req, owner); past != "" && b.shelf[past] != nil {
+			key, since, s = past, rest, b.shelf[past]
+		}
+	}
 	if s == nil {
 		// rewritten (resume); its Claude Code is told the tools the
 		// client offers now, and the session keeps the calls made of

@@ -18,7 +18,8 @@ import (
 
 // rewindClaude stands in for Claude Code: it logs its arguments and each
 // line it is told, answers each user message with its pid and turn, and
-// leaves a message saying SLOW mid-reply, for the client to give up on. A
+// leaves a message saying SLOW mid-reply, for the client to give up on,
+// unless it says DONE too, as a turn telling the one given up on again. A
 // rewind_conversation request is answered as mode says: "ok" rewinds,
 // "refuse" fails, "silent" says nothing. It gives the log's path.
 func rewindClaude(t *testing.T, mode string) string {
@@ -46,7 +47,7 @@ while read -r line; do
   n=$((n+1))
   echo '{"type":"stream_event","event":{"type":"message_start","message":{"id":"m'$n'","model":"claude-sonnet-5","usage":{"input_tokens":1}}}}'
   echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"pid '$$' turn '$n'"}}}'
-  case "$line" in *SLOW*) continue;; esac
+  case "$line" in *DONE*) ;; *SLOW*) continue;; esac
   echo '{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}}'
   echo '{"type":"stream_event","event":{"type":"message_stop"}}'
   echo '{"type":"result","subtype":"success","is_error":false,"result":""}'
@@ -216,6 +217,40 @@ func TestClaudeTurnGivenUpOnIsRewound(t *testing.T) {
 	// and it goes on as any kept run does
 	conv += `,` + rmsg("user", "go on instead") + `,` + rmsg("assistant", again)
 	if next := h.ask(`[` + conv + `,` + rmsg("user", "thanks") + `]`); next != "pid "+pid+" turn 5" {
+		t.Fatalf("next: %q", next)
+	}
+}
+
+// Claude Code resumed after a turn its user stopped sends that turn on,
+// with a reply it writes in itself, "No response requested.". The run
+// taken back to before the turn (#780) waits at the reply before it, and
+// the next turn goes on in it, told the turn given up on and what came
+// after, not the whole conversation.
+func TestClaudeTurnAfterOneGivenUpOnGoesOnInItsRun(t *testing.T) {
+	h := newRewindHarness(t, "ok")
+	first := h.ask(`[` + rmsg("user", "hi") + `]`)
+	pid := pidOf(t, first)
+	conv := rmsg("user", "hi") + `,` + rmsg("assistant", first)
+	h.giveUp(`[` + conv + `,` + rmsg("user", "SLOW, count") + `]`)
+	h.rewindAsked()
+	resumed := conv + `,` + rmsg("user", "SLOW, count") + `,{"role":"assistant","content":[{"type":"text","text":"No response requested."}]}`
+	again := h.ask(`[` + resumed + `,` + rmsg("user", "say F, DONE") + `]`)
+	if again != "pid "+pid+" turn 3" {
+		t.Fatalf("the next turn went to another Claude Code: %q (first %q)\n%s", again, first, h.read())
+	}
+	var told map[string]any
+	for _, m := range h.lines() {
+		if b, _ := json.Marshal(m); m["type"] == "user" && strings.Contains(string(b), "say F") {
+			told = m
+		}
+	}
+	b, _ := json.Marshal(told)
+	if told == nil || strings.Contains(string(b), "pid "+pid+" turn 1") {
+		t.Fatalf("the next turn was told more than the turn since: %s", b)
+	}
+	// and it goes on as any kept run does
+	resumed += `,` + rmsg("user", "say F, DONE") + `,` + rmsg("assistant", again)
+	if next := h.ask(`[` + resumed + `,` + rmsg("user", "thanks") + `]`); next != "pid "+pid+" turn 4" {
 		t.Fatalf("next: %q", next)
 	}
 }
